@@ -145,7 +145,7 @@ The Regents of the University of California.  All rights reserved.\n";
 #endif
 
 static int Bflag;			/* buffer size */
-static int Cflag;			/* rotate dump files after this many bytes */
+static long Cflag;			/* rotate dump files after this many bytes */
 static int Cflag_count;			/* Keep track of which file number we're writing */
 static int Dflag;			/* list available devices and exit */
 /*
@@ -186,26 +186,17 @@ static int infoprint;
 char *program_name;
 
 /* Forwards */
-static void error(const char *, ...)
-     __attribute__((noreturn))
-#ifdef __ATTRIBUTE___FORMAT_OK
-     __attribute__((format (printf, 1, 2)))
-#endif /* __ATTRIBUTE___FORMAT_OK */
-     ;
-static void warning(const char *, ...)
-#ifdef __ATTRIBUTE___FORMAT_OK
-     __attribute__((format (printf, 1, 2)))
-#endif /* __ATTRIBUTE___FORMAT_OK */
-     ;
-static void exit_tcpdump(int) __attribute__((noreturn));
+static void error(FORMAT_STRING(const char *), ...) NORETURN PRINTFLIKE(1, 2);
+static void warning(FORMAT_STRING(const char *), ...) PRINTFLIKE(1, 2);
+static void exit_tcpdump(int) NORETURN;
 static RETSIGTYPE cleanup(int);
 static RETSIGTYPE child_cleanup(int);
 static void print_version(void);
 static void print_usage(void);
-static void show_tstamp_types_and_exit(pcap_t *, const char *device) __attribute__((noreturn));
-static void show_dlts_and_exit(pcap_t *, const char *device) __attribute__((noreturn));
+static void show_tstamp_types_and_exit(pcap_t *, const char *device) NORETURN;
+static void show_dlts_and_exit(pcap_t *, const char *device) NORETURN;
 #ifdef HAVE_PCAP_FINDALLDEVS
-static void show_devices_and_exit (void) __attribute__((noreturn));
+static void show_devices_and_exit (void) NORETURN;
 #endif
 
 static void print_packet(u_char *, const struct pcap_pkthdr *, const u_char *);
@@ -239,6 +230,7 @@ static void info(int);
 static u_int packets_captured;
 #else /* __APPLE__ */
 
+static int truncation_mode = 0;
 static u_long packets_captured;
 static u_long max_packet_cnt = ULONG_MAX;
 static u_long skip_packet_cnt = 0;
@@ -610,6 +602,10 @@ show_devices_and_exit (void)
 #define OPTION_VERSION		128
 #define OPTION_TSTAMP_PRECISION	129
 #define OPTION_IMMEDIATE_MODE	130
+#ifdef __APPLE__
+#define OPTION_TIME_ZONE_OFFSET    131
+#define OPTION_APPLE_TRUNCATE    132
+#endif /* __APPLE__ */
 
 static const struct option longopts[] = {
 #if defined(HAVE_PCAP_CREATE) || defined(_WIN32)
@@ -650,8 +646,19 @@ static const struct option longopts[] = {
 	{ "relinquish-privileges", required_argument, NULL, 'Z' },
 	{ "number", no_argument, NULL, '#' },
 	{ "version", no_argument, NULL, OPTION_VERSION },
+#ifdef __APPLE__
+	{ "time-zone-offset", required_argument, NULL, OPTION_TIME_ZONE_OFFSET },
+	{ "apple-tzo", required_argument, NULL, OPTION_TIME_ZONE_OFFSET },
+	{ "apple-truncate", no_argument, NULL, OPTION_APPLE_TRUNCATE },
+#endif /* __APPLE__ */
 	{ NULL, 0, NULL, 0 }
 };
+
+
+#ifdef __APPLE__
+int parse_time_zone_offset(const char *);
+#endif /* __APPLE__ */
+
 
 #ifndef _WIN32
 /* Drop root privileges and chroot if necessary */
@@ -1102,6 +1109,10 @@ open_interface(const char *device, netdissect_options *ndo, char *ebuf)
 	 * Must be called before pcap_activate()
 	 */
 	pcap_set_want_pktap(pc, 1);
+
+	if (truncation_mode != 0) {
+		pcap_set_truncation_mode(pc, 1);
+	}
 #endif /* __APPLE__ */
 
 	status = pcap_activate(pc);
@@ -1116,9 +1127,9 @@ open_interface(const char *device, netdissect_options *ndo, char *ebuf)
 			/*
 			 * Return an error for our caller to handle.
 			 */
-			pcap_close(pc);
 			snprintf(ebuf, PCAP_ERRBUF_SIZE, "%s: %s\n(%s)",
 			    device, pcap_statustostr(status), cp);
+			pcap_close(pc);
 			return (NULL);
 		} else if (status == PCAP_ERROR_PERM_DENIED && *cp != '\0')
 			error("%s: %s\n(%s)", device,
@@ -1217,6 +1228,7 @@ main(int argc, char **argv)
 #ifdef __APPLE__
 	int on = 1;
 	int no_loopkupnet_warning = 0;
+	const char *timezone_offset_arg = NULL;
 #endif
 
 	/*
@@ -1431,6 +1443,9 @@ main(int argc, char **argv)
 						break;
 					case 'D':
 						val |= PRMD_DIR;
+						break;
+					case 'F':
+						val |= PRMD_FLAGS;
 						break;
 					case 'I':
 						val |= PRMD_IF;
@@ -1744,6 +1759,16 @@ main(int argc, char **argv)
 			break;
 #endif
 
+#ifdef __APPLE__
+		case OPTION_TIME_ZONE_OFFSET:
+			timezone_offset_arg = optarg;
+			break;
+
+		case OPTION_APPLE_TRUNCATE:
+			truncation_mode = 1;
+			break;
+#endif /* __APPLE__ */
+
 		default:
 			print_usage();
 			exit_tcpdump(1);
@@ -1765,7 +1790,7 @@ main(int argc, char **argv)
 	case 1: /* No time stamp */
 	case 2: /* Unix timeval style */
 	case 3: /* Microseconds since previous packet */
-        case 5: /* Microseconds since first packet */
+	case 5: /* Microseconds since first packet */
 		break;
 
 	default: /* Not supported */
@@ -1774,8 +1799,13 @@ main(int argc, char **argv)
 	}
 
 #ifdef __APPLE__
-    if (ndo->ndo_t0flag || ndo->ndo_t4flag)
-        thiszone = gmt2local(0);
+	if (ndo->ndo_t0flag || ndo->ndo_t4flag || ndo->ndo_tflag == 0 || ndo->ndo_tflag == 4) {
+		if (timezone_offset_arg == NULL) {
+			timezone_offset = gmt2local(0);
+		} else {
+			timezone_offset = parse_time_zone_offset(timezone_offset_arg);
+		}
+	}
 #endif /* __APPLE__ */
 
 	if (ndo->ndo_fflag != 0 && (VFileName != NULL || RFileName != NULL))
@@ -2197,7 +2227,12 @@ main(int argc, char **argv)
 	if (RFileName == NULL && VFileName == NULL) {
 		static const unsigned long cmds[] = { BIOCGSTATS, BIOCROTZBUF };
 
-		cap_rights_init(&rights, CAP_IOCTL, CAP_READ);
+		/*
+		 * The various libpcap devices use a combination of
+		 * read (bpf), ioctl (bpf, netmap), poll (netmap)
+		 * so we add the relevant access rights.
+		 */
+		cap_rights_init(&rights, CAP_IOCTL, CAP_READ, CAP_EVENT);
 		if (cap_rights_limit(pcap_fileno(pd), &rights) < 0 &&
 		    errno != ENOSYS) {
 			error("unable to limit pcap descriptor");
@@ -2529,6 +2564,13 @@ main(int argc, char **argv)
 						error("%s", pcap_geterr(pd));
 					if (pcap_setfilter(pd, &fcode) < 0)
 						error("%s", pcap_geterr(pd));
+				}
+				/*
+				 * Reinitialize the dumper view of the interface and process infos
+				 * with a new section
+				 */
+				if (WFileName != NULL) {
+					pcap_ng_dump_init_section_info(dumpinfo.p);
 				}
 #endif /* __APPLE__ */
 
@@ -3140,6 +3182,14 @@ print_version(void)
 	smi_version_string = nd_smi_version_string();
 	if (smi_version_string != NULL)
 		(void)fprintf (stderr, "SMI-library: %s\n", smi_version_string);
+
+#if defined(__SANITIZE_ADDRESS__)
+	(void)fprintf (stderr, "Compiled with AddressSanitizer/GCC.\n");
+#elif defined(__has_feature)
+#  if __has_feature(address_sanitizer)
+	(void)fprintf (stderr, "Compiled with AddressSanitizer/CLang.\n");
+#  endif
+#endif /* __SANITIZE_ADDRESS__ or __has_feature */
 }
 USES_APPLE_RST
 
@@ -3170,6 +3220,12 @@ print_usage(void)
 	(void)fprintf(stderr, "[ -T type ] [ --version ] [ -V file ]\n");
 	(void)fprintf(stderr,
 "\t\t[ -w file ] [ -W filecount ] [ -y datalinktype ] [ -z postrotate-command ]\n");
+#ifdef __APPLE__
+	(void)fprintf(stderr,
+"\t\t[ -g ] [ -k ] [ -o ] [ -P ] [ -Q meta-data-expression]\n");
+	(void)fprintf(stderr,
+"\t\t[ --apple-tzo offset] [--apple-truncate]\n");
+#endif /* __APPLE__ */
 	(void)fprintf(stderr,
 "\t\t[ -Z user ] [ expression ]\n");
 }
@@ -3283,8 +3339,8 @@ handle_pcap_ng_dump(struct dump_info *dump_info, const struct pcap_pkthdr *h,
 				uint32_t pibindex;
 
 				if (pib_index_option_info.length != 4) {
-					error("%s: pib index option length %u != 4", __func__, pib_index_option_info.length);
-					abort();
+					warning("%s: pib index option length %u != 4", __func__, pib_index_option_info.length);
+					goto done;
 				}
 				pibindex = *(uint32_t *)(pib_index_option_info.value);
 				if (pcap_is_swapped(dump_info->pd))
@@ -3296,8 +3352,8 @@ handle_pcap_ng_dump(struct dump_info *dump_info, const struct pcap_pkthdr *h,
 				uint32_t pibindex;
 
 				if (e_pib_index_option_info.length != 4) {
-					error("%s: e_pib index option length %u != 4", __func__, e_pib_index_option_info.length);
-					abort();
+					warning("%s: e_pib index option length %u != 4", __func__, e_pib_index_option_info.length);
+					goto done;
 				}
 				pibindex = *(uint32_t *)(e_pib_index_option_info.value);
 				if (pcap_is_swapped(dump_info->pd))
@@ -3307,8 +3363,8 @@ handle_pcap_ng_dump(struct dump_info *dump_info, const struct pcap_pkthdr *h,
 			}
 			if (pcap_ng_block_get_option(block, PCAPNG_EPB_SVC, &option_info) == 1) {
 				if (option_info.length != 4) {
-					error("%s: svc option length %u != 4", __func__, option_info.length);
-					abort();
+					warning("%s: svc option length %u != 4", __func__, option_info.length);
+					goto done;
 				}
 				pkt_svc = *(uint32_t *)(option_info.value);
 				if (pcap_is_swapped(dump_info->pd))
@@ -3346,8 +3402,8 @@ handle_pcap_ng_dump(struct dump_info *dump_info, const struct pcap_pkthdr *h,
 
 	if_info = pcap_find_if_info_by_id(dump_info->pd, src_if_id);
 	if (if_info == NULL) {
-		error("%s: unknown interface id %u", __func__, src_if_id);
-		abort();
+		warning("%s: unknown interface id %u", __func__, src_if_id);
+		goto done;
 	}
 
 	/*
@@ -3367,8 +3423,8 @@ handle_pcap_ng_dump(struct dump_info *dump_info, const struct pcap_pkthdr *h,
 
 	if (pcap_ng_block_get_option(block, pack_flags_code, &option_info) == 1) {
 		if (option_info.length != 4) {
-			error("%s: pack_flags option length %u != 4", __func__, option_info.length);
-			abort();
+			warning("%s: pack_flags option length %u != 4", __func__, option_info.length);
+			goto done;
 		}
 		bcopy(option_info.value, &packet_flags, sizeof(packet_flags));
 
@@ -3418,11 +3474,11 @@ handle_pcap_ng_dump(struct dump_info *dump_info, const struct pcap_pkthdr *h,
 				epbp->interface_id = if_info->if_dump_id;
 			}
 			if (proc_info != NULL) {
-				uint32_t pibindex = proc_info;
+				uint32_t pibindex;
 
 				if (pib_index_option_info.length != 4) {
-					error("%s: pib index option length %u != 4", __func__, pib_index_option_info.length);
-					abort();
+					warning("%s: pib index option length %u != 4", __func__, pib_index_option_info.length);
+					goto done;
 				}
 				pibindex = *(uint32_t *)(pib_index_option_info.value);
 				if (pcap_is_swapped(dump_info->pd))
@@ -3552,6 +3608,7 @@ print_pcap_ng_block(u_char *user, const struct pcap_pkthdr *h, const u_char *sp)
 	struct pcap_proc_info *e_proc_info = NULL;
 	uint32_t pkt_svc = -1;
 	uint32_t packet_flags = 0;
+	uint32_t pmdflags = 0;
 	struct pcapng_option_info option_info;
 
 	block = pcap_ng_block_alloc_with_raw_block(ndo->ndo_pcap, (u_char *)sp);
@@ -3629,7 +3686,7 @@ print_pcap_ng_block(u_char *user, const struct pcap_pkthdr *h, const u_char *sp)
 
 				ND_PRINT((ndo, "Process Information Block pid: %u proc_name: %s%s%s\n",
 						  proc_info->proc_pid, proc_info->proc_name,
-						  uu_null == 0 ? uu_str : " proc_uuid: ", uu_null == 0 ? uu_str : ""));
+                          uu_null == 0 ? " proc_uuid: " : "", uu_null == 0 ? uu_str : ""));
 			}
 			goto done;
 		}
@@ -3640,8 +3697,8 @@ print_pcap_ng_block(u_char *user, const struct pcap_pkthdr *h, const u_char *sp)
 				uint32_t pibindex;
 
 				if (option_info.length != 4) {
-					error("%s: pib index option length %u != 4", __func__, option_info.length);
-					abort();
+					warning("%s: pib index option length %u != 4", __func__, option_info.length);
+					goto done;
 				}
 				pibindex = *(uint32_t *)(option_info.value);
 				if (pcap_is_swapped(ndo->ndo_pcap))
@@ -3653,8 +3710,8 @@ print_pcap_ng_block(u_char *user, const struct pcap_pkthdr *h, const u_char *sp)
 				uint32_t pibindex;
 
 				if (option_info.length != 4) {
-					error("%s: e_pib index option length %u != 4", __func__, option_info.length);
-					abort();
+					warning("%s: e_pib index option length %u != 4", __func__, option_info.length);
+					goto done;
 				}
 				pibindex = *(uint32_t *)(option_info.value);
 				if (pcap_is_swapped(ndo->ndo_pcap))
@@ -3664,12 +3721,22 @@ print_pcap_ng_block(u_char *user, const struct pcap_pkthdr *h, const u_char *sp)
 			}
 			if (pcap_ng_block_get_option(block, PCAPNG_EPB_SVC, &option_info) == 1) {
 				if (option_info.length != 4) {
-					error("%s: svc option length %u != 4", __func__, option_info.length);
-					abort();
+					warning("%s: svc option length %u != 4", __func__, option_info.length);
+					goto done;
 				}
 				pkt_svc = *(uint32_t *)(option_info.value);
 				if (pcap_is_swapped(ndo->ndo_pcap))
 					pkt_svc = SWAPLONG(pkt_svc);
+			}
+			if (pcap_ng_block_get_option(block, PCAPNG_EPB_PMD_FLAGS, &option_info) == 1) {
+				if (option_info.length != 4) {
+					error("%s: pmdflags option length %u != 4", __func__, option_info.length);
+					abort();
+				}
+				bcopy(option_info.value, &pmdflags, sizeof(pmdflags));
+
+				if (pcap_is_swapped(ndo->ndo_pcap))
+					packet_flags = SWAPLONG(pmdflags);
 			}
 
 			if_id = epbp->interface_id;
@@ -3735,8 +3802,8 @@ print_pcap_ng_block(u_char *user, const struct pcap_pkthdr *h, const u_char *sp)
 
 	if_info = pcap_find_if_info_by_id(ndo->ndo_pcap, if_id);
 	if (if_info == NULL) {
-		error("%s: unknown interface id %u", __func__, if_id);
-		abort();
+		warning("%s: unknown interface id %u", __func__, if_id);
+		goto done;
 	}
 
 	/*
@@ -3748,8 +3815,8 @@ print_pcap_ng_block(u_char *user, const struct pcap_pkthdr *h, const u_char *sp)
 
 	if (pcap_ng_block_get_option(block, pack_flags_code, &option_info) == 1) {
 		if (option_info.length != 4) {
-			error("%s: pack_flags option length %u != 4", __func__, option_info.length);
-			abort();
+			warning("%s: pack_flags option length %u != 4", __func__, option_info.length);
+			goto done;
 		}
 		bcopy(option_info.value, &packet_flags, sizeof(packet_flags));
 
@@ -3791,7 +3858,7 @@ print_pcap_ng_block(u_char *user, const struct pcap_pkthdr *h, const u_char *sp)
 	/*
 	 * Packet metadata
 	 */
-	if (ndo->ndo_kflag != PRMD_NONE) {
+    if (ndo->ndo_kflag != PRMD_NONE && ndo->ndo_kflag != PRMD_VERBOSE) {
 		const char *prsep = "";
 
 		ND_PRINT((ndo, "("));
@@ -3818,7 +3885,7 @@ print_pcap_ng_block(u_char *user, const struct pcap_pkthdr *h, const u_char *sp)
 		 * Service class
 		 */
 		if ((ndo->ndo_kflag & PRMD_SVC) && pkt_svc != -1) {
-			ND_PRINT((ndo, "%ssvc %s",
+			ND_PRINT((ndo, "%s" "svc %s",
 					  prsep,
 					  svc2str(pkt_svc)));
 			prsep = ", ";
@@ -3828,13 +3895,44 @@ print_pcap_ng_block(u_char *user, const struct pcap_pkthdr *h, const u_char *sp)
 		 * Direction
 		 */
 		if ((ndo->ndo_kflag & PRMD_DIR) && (packet_flags & 3)) {
-			if ((packet_flags & 2) == 2)
-				ND_PRINT((ndo, "%sout",
+			if ((packet_flags & PCAPNG_PBF_DIR_MASK) == PCAPNG_PBF_DIR_OUTBOUND)
+				ND_PRINT((ndo, "%s" "out",
 						  prsep));
-			else if ((packet_flags & 1) == 1)
-				ND_PRINT((ndo, "%sin",
+			else if ((packet_flags & PCAPNG_PBF_DIR_MASK) == PCAPNG_PBF_DIR_INBOUND)
+				ND_PRINT((ndo, "%s" "in",
 						  prsep));
 			prsep = ", ";
+		}
+
+		/*
+		 * Custom packet medadata flags
+		 */
+		if ((ndo->ndo_kflag & PRMD_FLAGS) && pmdflags != 0) {
+			if ((pmdflags & PCAPNG_EPB_PMDF_NEW_FLOW)) {
+				ND_PRINT((ndo, "%s" "nf",
+					  prsep));
+				prsep = ", ";
+			}
+			if ((pmdflags & PCAPNG_EPB_PMDF_KEEP_ALIVE)) {
+				ND_PRINT((ndo, "%s" "ka",
+					  prsep));
+				prsep = ", ";
+			}
+			if ((pmdflags & PCAPNG_EPB_PMDF_REXMIT)) {
+				ND_PRINT((ndo, "%s" "re",
+					  prsep));
+				prsep = ", ";
+			}
+			if ((pmdflags & PCAPNG_EPB_PMDF_SOCKET)) {
+				ND_PRINT((ndo, "%s" "so",
+					  prsep));
+				prsep = ", ";
+			}
+			if ((pmdflags & PCAPNG_EPB_PMDF_NEXUS_CHANNEL)) {
+				ND_PRINT((ndo, "%s" "ch",
+					  prsep));
+				prsep = ", ";
+			}
 		}
 
 		/*
@@ -3872,6 +3970,54 @@ done:
 		pcap_ng_free_block(block);
 }
 
+/*
+ * Returns the time zone offset in seconds
+ */
+int
+parse_time_zone_offset(const char *str)
+{
+	int tzo = 0;
+	size_t len = strlen(str);
+	char ch;
+	int consumed;
+
+	if (sscanf(str, "GMT+%d%n", &tzo, &consumed) == 1) {
+		tzo *= 3600;
+	} else if (sscanf(str, "GMT-%d%n", &tzo, &consumed) == 1) {
+		tzo *= -3600;
+	} else if (sscanf(str, "%d%c%n", &tzo, &ch, &consumed) == 2) {
+		switch (ch) {
+			case 'h':
+				tzo = tzo * 3660;
+				break;
+			case 'm':
+				tzo = tzo * 60;
+				break;
+			case 's':
+				break;
+			default:
+				error("malformed time zone offset argument \"%s\"", str);
+				print_usage();
+				exit_tcpdump(1);
+				break;
+		}
+	} else if (sscanf(str, "%d%n", &tzo, &consumed) == 1) {
+		/* Hours for a plain integer */
+		tzo *= 3600;
+	} else {
+		error("malformed time zone offset argument \"%s\"", str);
+		print_usage();
+		exit_tcpdump(1);
+	}
+
+	if (consumed != len) {
+		error("malformed time zone offset argument \"%s\"", str);
+		print_usage();
+		exit_tcpdump(1);
+	}
+
+	return (tzo);
+}
 
 #endif /* __APPLE__ */
 
