@@ -174,7 +174,6 @@
 		7244CC6E1624FF2100141ECF /* setsignal.c in Sources */ = {isa = PBXBuildFile; fileRef = FC7915B6103A295700CBA90E /* setsignal.c */; };
 		7244CC6F1624FF2100141ECF /* smbutil.c in Sources */ = {isa = PBXBuildFile; fileRef = FC7915B7103A295700CBA90E /* smbutil.c */; };
 		7244CC701624FF2100141ECF /* tcpdump.c in Sources */ = {isa = PBXBuildFile; fileRef = FC7915B8103A295700CBA90E /* tcpdump.c */; };
-		7244CC711624FF2100141ECF /* util.c in Sources */ = {isa = PBXBuildFile; fileRef = FC7915B9103A295700CBA90E /* util.c */; };
 		7244CC721624FF2100141ECF /* version.c in Sources */ = {isa = PBXBuildFile; fileRef = FC791662103A2F9100CBA90E /* version.c */; };
 		7244CC731624FF2100141ECF /* print-pflog.c in Sources */ = {isa = PBXBuildFile; fileRef = E07AD53010AA1D0300E8B167 /* print-pflog.c */; };
 		7244CC741624FF2100141ECF /* print-forces.c in Sources */ = {isa = PBXBuildFile; fileRef = 720E462B1231629A0056BE01 /* print-forces.c */; };
@@ -357,7 +356,6 @@
 		FC7916FA103A35FE00CBA90E /* setsignal.c in Sources */ = {isa = PBXBuildFile; fileRef = FC7915B6103A295700CBA90E /* setsignal.c */; };
 		FC7916FB103A35FE00CBA90E /* smbutil.c in Sources */ = {isa = PBXBuildFile; fileRef = FC7915B7103A295700CBA90E /* smbutil.c */; };
 		FC7916FC103A35FE00CBA90E /* tcpdump.c in Sources */ = {isa = PBXBuildFile; fileRef = FC7915B8103A295700CBA90E /* tcpdump.c */; };
-		FC7916FD103A35FE00CBA90E /* util.c in Sources */ = {isa = PBXBuildFile; fileRef = FC7915B9103A295700CBA90E /* util.c */; };
 		FC7916FE103A35FE00CBA90E /* version.c in Sources */ = {isa = PBXBuildFile; fileRef = FC791662103A2F9100CBA90E /* version.c */; };
 		FC7916FF103A360A00CBA90E /* libpcap.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = FC791654103A2F1B00CBA90E /* libpcap.dylib */; };
 /* End PBXBuildFile section */
@@ -631,7 +629,6 @@
 		FC7915B6103A295700CBA90E /* setsignal.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = setsignal.c; path = tcpdump/setsignal.c; sourceTree = "<group>"; };
 		FC7915B7103A295700CBA90E /* smbutil.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = smbutil.c; path = tcpdump/smbutil.c; sourceTree = "<group>"; };
 		FC7915B8103A295700CBA90E /* tcpdump.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = tcpdump.c; path = tcpdump/tcpdump.c; sourceTree = "<group>"; };
-		FC7915B9103A295700CBA90E /* util.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = util.c; path = tcpdump/util.c; sourceTree = "<group>"; };
 		FC791654103A2F1B00CBA90E /* libpcap.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libpcap.dylib; path = /usr/lib/libpcap.dylib; sourceTree = "<absolute>"; };
 		FC791662103A2F9100CBA90E /* version.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = version.c; path = tcpdump/version.c; sourceTree = "<group>"; };
 		FC79167E103A35EA00CBA90E /* tcpdump */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = tcpdump; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -856,7 +853,6 @@
 				727CF92B1E49264A00BAE514 /* strtoaddr.c */,
 				FC7915B8103A295700CBA90E /* tcpdump.c */,
 				727CF90E1E49144100BAE514 /* util-print.c */,
-				FC7915B9103A295700CBA90E /* util.c */,
 				FC791662103A2F9100CBA90E /* version.c */,
 			);
 			name = Source;
@@ -1033,6 +1029,7 @@
 		08FB7793FE84155DC02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
+				DefaultBuildSystemTypeForWorkspace = Original;
 				LastSwiftUpdateCheck = 0700;
 				LastUpgradeCheck = 0800;
 				TargetAttributes = {
@@ -1282,7 +1279,6 @@
 				727CF9311E49269E00BAE514 /* strtoaddr.c in Sources */,
 				7244CC701624FF2100141ECF /* tcpdump.c in Sources */,
 				727CF91E1E49160600BAE514 /* util-print.c in Sources */,
-				7244CC711624FF2100141ECF /* util.c in Sources */,
 				7244CC721624FF2100141ECF /* version.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1472,7 +1468,6 @@
 				727CF92C1E49264A00BAE514 /* strtoaddr.c in Sources */,
 				FC7916FC103A35FE00CBA90E /* tcpdump.c in Sources */,
 				727CF9141E49144100BAE514 /* util-print.c in Sources */,
-				FC7916FD103A35FE00CBA90E /* util.c in Sources */,
 				FC7916FE103A35FE00CBA90E /* version.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1513,19 +1508,26 @@
 					/usr/include,
 					"$(PROJECT_DIR)/tcpdump/missing",
 					"$(SHARED_DERIVED_FILE_DIR)",
+					/usr/local/libressl/include,
 				);
-				"OTHER_CFLAGS[sdk=iphoneos*]" = "-DLBL_ALIGN=1";
+				LIBRARY_SEARCH_PATHS = /usr/local/libressl/lib;
+				"OTHER_CFLAGS[sdk=iphoneos*]" = (
+					"-DLBL_ALIGN=1",
+					"-DGUESS_TSO",
+				);
 				"OTHER_CFLAGS[sdk=macosx*][arch=*]" = (
 					"-DHAVE_OPENSSL_EVP_H=1",
 					"-DHAVE_LIBCRYPTO=1",
+					"-DGUESS_TSO",
 				);
 				"OTHER_LDFLAGS[sdk=macosx*]" = (
-					"-lssl.35",
-					"-lcrypto.35",
+					"-lssl",
+					"-lcrypto",
 				);
 				PREBINDING = NO;
 				SDKROOT = macosx.internal;
-				SUPPORTED_PLATFORMS = "macosx iphoneos";
+				STRIP_STYLE = debugging;
+				SUPPORTED_PLATFORMS = "macosx iphoneos appletvos watchos bridgeos";
 				VERSIONING_SYSTEM = "apple-generic";
 				ZERO_LINK = NO;
 			};
@@ -1534,6 +1536,7 @@
 		7244CC871624FF2100141ECF /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "$(SRCROOT)/tcpdump/entitlements.plist";
 				INSTALL_PATH = /usr/sbin;
 				LIBRARY_SEARCH_PATHS = /usr/local/lib;
 				PRODUCT_NAME = tcpdumpstatic;
@@ -1544,7 +1547,7 @@
 		7244CC881624FF2100141ECF /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				COPY_PHASE_STRIP = NO;
+				CODE_SIGN_ENTITLEMENTS = "$(SRCROOT)/tcpdump/entitlements.plist";
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
@@ -1576,20 +1579,27 @@
 					/usr/include,
 					"$(PROJECT_DIR)/tcpdump/missing",
 					"$(SHARED_DERIVED_FILE_DIR)",
+					/usr/local/libressl/include,
 				);
-				ONLY_ACTIVE_ARCH = YES;
-				"OTHER_CFLAGS[sdk=iphoneos*]" = "-DLBL_ALIGN=1";
+				LIBRARY_SEARCH_PATHS = /usr/local/libressl/lib;
+				ONLY_ACTIVE_ARCH = NO;
+				"OTHER_CFLAGS[sdk=iphoneos*]" = (
+					"-DLBL_ALIGN=1",
+					"-DGUESS_TSO",
+				);
 				"OTHER_CFLAGS[sdk=macosx*][arch=*]" = (
 					"-DHAVE_OPENSSL_EVP_H=1",
 					"-DHAVE_LIBCRYPTO=1",
+					"-DGUESS_TSO",
 				);
 				"OTHER_LDFLAGS[sdk=macosx*]" = (
-					"-lssl.35",
-					"-lcrypto.35",
+					"-lssl",
+					"-lcrypto",
 				);
 				PREBINDING = NO;
 				SDKROOT = macosx.internal;
-				SUPPORTED_PLATFORMS = "macosx iphoneos";
+				STRIP_STYLE = debugging;
+				SUPPORTED_PLATFORMS = "macosx iphoneos appletvos watchos bridgeos";
 				VERSIONING_SYSTEM = "apple-generic";
 				ZERO_LINK = NO;
 			};
@@ -1599,7 +1609,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "$(SRCROOT)/tcpdump/entitlements.plist";
-				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
