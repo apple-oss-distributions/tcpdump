@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2013 Apple Inc. All rights reserved.
+ * Copyright (c) 2021 Apple Inc. All rights reserved.
  *
  * @APPLE_OSREFERENCE_LICENSE_HEADER_START@
  *
@@ -26,30 +26,45 @@
  * @APPLE_OSREFERENCE_LICENSE_HEADER_END@
  */
 
-#ifndef tcpdump_pktmetadatafilter_h
-#define tcpdump_pktmetadatafilter_h
+#include <err.h>
+#include <sysexits.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
-struct node;
-typedef struct node node_t;
+#include "pktmetadatafilter.h"
 
-struct pkt_meta_data {
-	const char *itf;
-	const char *proc;
-	const char *eproc;
-	pid_t pid;
-	pid_t epid;
-	const char *dir;
-	const char *svc;
-};
+int main(int argc,  char * const argv[])
+{
+    int ch;
+    char *input_str = NULL;
+    node_t *pkt_meta_data_expression = NULL;
+    int verbose = 0;
 
+    while ((ch = getopt(argc, argv, "Q:v")) != -1) {
+        switch (ch) {
+            case 'Q':
+                if (input_str != NULL) {
+                    errx(EX_USAGE, "-Q used twice");
+                }
+                input_str = strdup(optarg);
+                if (input_str == NULL) {
+                    errx(EX_OSERR, "calloc() failed");
+                }
+                break;
+            case 'v':
+                verbose = 1;
+                break;
+        }
+    }
+    set_parse_verbose(verbose);
 
-node_t * parse_expression(const char *);
-void print_expression(node_t *);
-int evaluate_expression(node_t *, struct pkt_meta_data *);
-void free_expression(node_t *);
+    pkt_meta_data_expression = parse_expression(input_str);
+    if (pkt_meta_data_expression == NULL)
+        errx(EX_SOFTWARE, "invalid expression \"%s\"", input_str);
 
-#ifdef DEBUG
-void set_parse_verbose(int val);
-#endif /* DEBUG */
+    free(input_str);
 
-#endif
+    return 0;
+}
