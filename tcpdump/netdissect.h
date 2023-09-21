@@ -335,6 +335,7 @@ extern void nd_pop_all_packet_info(netdissect_options *);
 #define PRMD_FLAGS      0x1000
 #define PRMD_FLOWID     0x2000
 #define PRMD_TRACETAG   0x4000
+#define PRMD_DLT        0x8000
 #define PRMD_DEFAULT    (PRMD_IF|PRMD_PNAME|PRMD_PID|PRMD_SVC|PRMD_DIR|PRMD_COMMENT|PRMD_FLAGS)
 #define PRMD_ALL		0xffff
 #endif /* __APPLE__ */
@@ -430,6 +431,9 @@ extern void nd_pop_all_packet_info(netdissect_options *);
 extern void ts_print(netdissect_options *, const struct timeval *);
 extern void signed_relts_print(netdissect_options *, int32_t);
 extern void unsigned_relts_print(netdissect_options *, uint32_t);
+
+extern const char *nd_format_time(char *buf, size_t bufsize,
+    const char *format, const struct tm *timeptr);
 
 extern void fn_print_char(netdissect_options *, u_char);
 extern void fn_print_str(netdissect_options *, const u_char *);

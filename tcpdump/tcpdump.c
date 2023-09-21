@@ -726,7 +726,11 @@ show_remote_devices_and_exit(void)
 
 #ifdef HAVE_PCAP_SETDIRECTION
 #define Q_FLAG "Q:"
+#ifdef __APPLE__
+#define Q_FLAG_USAGE " [ -Q in|out|inout|out|packet-metadata-filter ]"
+#else /* __APPLE__ */
 #define Q_FLAG_USAGE " [ -Q in|out|inout ]"
+#endif /* __APPLE__ */
 #else
 #define Q_FLAG
 #define Q_FLAG_USAGE
@@ -933,6 +937,8 @@ MakeFilename(char *buffer, char *orig_name, int cnt, int max_chars)
         char *filename = malloc(PATH_MAX + 1);
         if (filename == NULL)
             error("%s: malloc", __func__);
+        if (strlen(orig_name) == 0)
+            error("an empty string is not a valid file name");
 
         /* Process with strftime if Gflag is set. */
         if (Gflag != 0) {
@@ -944,9 +950,25 @@ MakeFilename(char *buffer, char *orig_name, int cnt, int max_chars)
           }
 
           /* There's no good way to detect an error in strftime since a return
-           * value of 0 isn't necessarily failure.
+           * value of 0 isn't necessarily failure; if orig_name is an empty
+           * string, the formatted string will be empty.
+           *
+           * However, the C90 standard says that, if there *is* a
+           * buffer overflow, the content of the buffer is undefined,
+           * so we must check for a buffer overflow.
+           *
+           * So we check above for an empty orig_name, and only call
+           * strftime() if it's non-empty, in which case the return
+           * value will only be 0 if the formatted date doesn't fit
+           * in the buffer.
+           *
+           * (We check above because, even if we don't use -G, we
+           * want a better error message than "tcpdump: : No such
+           * file or directory" for this case.)
            */
-          strftime(filename, PATH_MAX, orig_name, local_tm);
+          if (strftime(filename, PATH_MAX, orig_name, local_tm) == 0) {
+            error("%s: strftime", __func__);
+          }
         } else {
           strncpy(filename, orig_name, PATH_MAX);
         }
@@ -1899,6 +1921,9 @@ main(int argc, char **argv)
 					case 't':
 						val |= PRMD_TRACETAG;
 						break;
+					case 'd':
+						val |= PRMD_DLT;
+						break;
 					default:
 						/*
 						 * This is most likely parsing a filter expression
@@ -1972,26 +1997,30 @@ main(int argc, char **argv)
 			++ndo->ndo_suppress_default_print;
 			break;
 
-#ifdef __APPLE__
-		case 'Q':
-			pkt_meta_data_expression = parse_expression(optarg);
-			if (pkt_meta_data_expression == NULL)
-				error("invalid expression \"%s\"", optarg);
-			break;
-#else /* __APPLE__ */
 #ifdef HAVE_PCAP_SETDIRECTION
 		case 'Q':
 			if (ascii_strcasecmp(optarg, "in") == 0)
 				Qflag = PCAP_D_IN;
 			else if (ascii_strcasecmp(optarg, "out") == 0)
 				Qflag = PCAP_D_OUT;
-			else if (ascii_strcasecmp(optarg, "inout") == 0)
-				Qflag = PCAP_D_INOUT;
-			else
+                        else if (ascii_strcasecmp(optarg, "inout") == 0)
+                            Qflag = PCAP_D_INOUT;
+#ifdef __APPLE__
+#ifdef PCAP_D_NONE
+                        else if (ascii_strcasecmp(optarg, "none") == 0)
+                            Qflag = PCAP_D_NONE;
+#endif /* PCAP_D_NONE */
+                        else {
+                            pkt_meta_data_expression = parse_expression(optarg);
+                            if (pkt_meta_data_expression == NULL)
+                                error("invalid expression \"%s\"", optarg);
+                        }
+#else /* __APPLE__ */
+                        else
 				error("unknown capture direction `%s'", optarg);
+#endif /* __APPLE__ */
 			break;
 #endif /* HAVE_PCAP_SETDIRECTION */
-#endif /* __APPLE__ */
 		case 'r':
 			RFileName = optarg;
 			break;
@@ -4182,13 +4211,6 @@ handle_pcap_ng_dump(struct dump_info *dump_info, const struct pcap_pkthdr *h,
 		goto done;
 	}
 
-	/*
-	 * Evaluate the per-interface BPF filter expression
-	 */
-	if (if_info->if_filter_program.bf_insns != NULL &&
-		pcap_offline_filter(&if_info->if_filter_program, h, pkt_data) == 0)
-		goto done;
-
 	if (pcap_ng_block_get_option(block, pack_flags_code, &option_info) == 1) {
 		if (option_info.length != 4) {
 			warning("%s: pack_flags option length %u != 4", __func__, option_info.length);
@@ -4207,6 +4229,7 @@ handle_pcap_ng_dump(struct dump_info *dump_info, const struct pcap_pkthdr *h,
 		struct pkt_meta_data pmd;
 
 		pmd.itf = &if_info->if_name[0];
+		pmd.dlt = if_info->if_linktype;
 		pmd.proc = (proc_info != NULL) ? proc_info->proc_name : "";
 		pmd.eproc = (e_proc_info != NULL) ? e_proc_info->proc_name : "";
 		pmd.pid = (proc_info != NULL) ? proc_info->proc_pid : -1;
@@ -4219,6 +4242,14 @@ handle_pcap_ng_dump(struct dump_info *dump_info, const struct pcap_pkthdr *h,
 			packets_mtdt_fltr_drop++;
 			goto done;
 		}
+	}
+
+	/*
+	 * Evaluate the per-interface BPF filter expression
+	 */
+	if (if_info->if_filter_program.bf_insns != NULL &&
+		pcap_offline_filter(&if_info->if_filter_program, h, pkt_data) == 0) {
+		goto done;
 	}
 
 	/*
@@ -4688,13 +4719,6 @@ print_pcap_ng_block(u_char *user, const struct pcap_pkthdr *h, const u_char *sp)
 		goto done;
 	}
 
-	/*
-	 * Evaluate the per-interface BPF filter expression
-	 */
-	if (if_info->if_filter_program.bf_insns != NULL &&
-		pcap_offline_filter(&if_info->if_filter_program, h, pkt_data) == 0)
-		goto done;
-
 	if (pcap_ng_block_get_option(block, pack_flags_code, &option_info) == 1) {
 		if (option_info.length != 4) {
 			warning("%s: pack_flags option length %u != 4", __func__, option_info.length);
@@ -4713,6 +4737,7 @@ print_pcap_ng_block(u_char *user, const struct pcap_pkthdr *h, const u_char *sp)
 		struct pkt_meta_data pmd;
 
 		pmd.itf = &if_info->if_name[0];
+		pmd.dlt = if_info->if_linktype;
 		pmd.proc = (proc_info != NULL) ? proc_info->proc_name : "";
 		pmd.eproc = (e_proc_info != NULL) ? e_proc_info->proc_name : "";
 		pmd.pid = (proc_info != NULL) ? proc_info->proc_pid : -1;
@@ -4726,6 +4751,14 @@ print_pcap_ng_block(u_char *user, const struct pcap_pkthdr *h, const u_char *sp)
 			packets_mtdt_fltr_drop++;
 			goto done;
 		}
+	}
+
+	/*
+	 * Evaluate the per-interface BPF filter expression
+	 */
+	if (if_info->if_filter_program.bf_insns != NULL &&
+		pcap_offline_filter(&if_info->if_filter_program, h, pkt_data) == 0) {
+		goto done;
 	}
 
 	++packets_captured;
@@ -4845,6 +4878,12 @@ print_pcap_ng_block(u_char *user, const struct pcap_pkthdr *h, const u_char *sp)
 			prsep = ", ";
 		}
 #endif /* PCAPNG_EPB_TRACE_TAG */
+		if (ndo->ndo_kflag & PRMD_DLT) {
+			ND_PRINT("%s" "dlt 0x%x",
+				 prsep,
+					 if_info->if_linktype);
+			prsep = ", ";
+		}
 
 		/*
 		 * Comment
